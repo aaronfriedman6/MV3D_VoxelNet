@@ -106,6 +106,7 @@ class Net(object):
             path = path.replace(os.path.basename(self.checkpoint_dir),'default')
         assert tf.train.checkpoint_exists(path) == True
         self.saver.restore(sess, path)
+        print('\nSuccessfully restored weights: %s' % path)
 
 
     def get_variables(self, scope_names):
@@ -113,7 +114,7 @@ class Net(object):
         for scope in scope_names:
             variables = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
             assert len(variables) != 0
-            variables += variables
+            variables.extend([v for v in variables if v not in variables])
         return variables
 
 
@@ -261,9 +262,9 @@ class MV3D(object):
 
         # all prediction on top
         probs, boxes3d = rcnn_nms(self.fuse_probs, self.fuse_deltas,self.rois3d, score_threshold=0.)
-        fusion_proposal_top = data.draw_box3d_on_top(self.top_image, boxes3d,scores=probs,thickness=0)
+        fusion_proposal_top = data.draw_box3d_on_top(self.top_image, boxes3d,scores=probs,thickness=1)
         prediction_top = data.draw_box3d_on_top(self.top_image, self.boxes3d, scores=self.probs,
-                                                     thickness=0)
+                                                     thickness=1)
         # add fusion loss text
         text = ''
         if loss != None: text += 'loss c: %6f r: %6f' % loss
