@@ -19,6 +19,7 @@ from keras.layers.merge import add
 from keras.layers.normalization import BatchNormalization
 from keras.regularizers import l2
 from keras import backend as K
+import tensorflow as tf
 
 
 def _bn_relu(input):
@@ -255,7 +256,14 @@ class ResnetBuilder(object):
 
         _handle_dim_ordering()
         block_fn = _get_block(block_fn)
-        conv1 = _conv_bn_relu(filters=64, kernel_size=(3, 3), strides=(1, 1))(input)
+        feature = tf.placeholder(tf.float32, [None, 35, 7], name='vox_feature')
+        vfe1 = VFELayer(32, 'VFE-1')
+        vfe2 = VFELayer(128, 'VFE-2')
+        mask = tf.not_equal(tf.reduce_max(feature, axis=2, keep_dims=True), 0)
+        x = vfe1.apply(feature, mask, input)
+        x = vfe2.apply(x, mask, input)
+        voxelwise = tf.reduce_max(x, axis=1)
+        conv1 = _conv_bn_relu(filters=64, kernel_size=(3, 3), strides=(1, 1))(voxelwise)
         pool1 = MaxPooling2D(pool_size=(3, 3), strides=(2, 2), padding="same")(conv1)
 
         block = pool1
@@ -293,6 +301,38 @@ class ResnetBuilder(object):
     @staticmethod
     def build_resnet_152(input_shape, num_outputs):
         return ResnetBuilder.build(input_shape, num_outputs, bottleneck, [3, 8, 36, 3])
+
+
+class VFELayer(object):
+    
+    def __init__(self, out_channels, name):
+        super(VFELayer, self).__init__()
+        self.units = int(out_channels / 2)
+        with tf.variable_scope(name, reuse=tf.AUTO_REUSE) as scope:
+            self.dense = tf.layers.Dense(
+                self.units, tf.nn.relu, name='dense', _reuse=tf.AUTO_REUSE, _scope=scope)
+            self.batch_norm = tf.layers.BatchNormalization(
+                name='batch_norm', fused=True, _reuse=tf.AUTO_REUSE, _scope=scope)
+
+    def apply(self, inputs, mask, training):
+        # [K, T, 7] tensordot [7, units] = [K, T, units]
+        pointwise = self.batch_norm.apply(self.dense.apply(inputs), training)
+
+        #n [K, 1, units]
+        aggregated = tf.reduce_max(pointwise, axis=1, keep_dims=True)
+
+        # [K, T, units]
+        repeated = tf.tile(aggregated, [1, cfg.VOXEL_POINT_COUNT, 1])
+
+        # [K, T, 2 * units]
+        concatenated = tf.concat([pointwise, repeated], axis=2)
+
+        mask = tf.tile(mask, [1, 1, 2 * self.units])
+
+        concatenated = tf.multiply(concatenated, tf.cast(mask, tf.float32))
+
+        return concatenated
+
 
 if __name__ == '__main__':
     import tensorflow as tf
