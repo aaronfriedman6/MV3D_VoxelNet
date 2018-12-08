@@ -65,7 +65,7 @@ class RPN3D(object):
                     # must use name scope here since we do not want to create new variables
                     # graph
                     feature = FeatureNet(
-                        training=self.is_train, batch_size=self.single_batch_size)
+                        training=self.is_train, batch_size=self.single_batch_size, vfe='VFELayer')
                     rpn = MiddleAndRPN(
                         input=feature.outputs, alpha=self.alpha, beta=self.beta, training=self.is_train)
                     tf.get_variable_scope().reuse_variables()
